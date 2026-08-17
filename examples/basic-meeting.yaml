@@ -13,3 +13,10 @@ meeting:
     - id: implementer
       role: implementation specialist
       capability_tags: [python, git]
+  # 可选：模型支持讨论轮的提供商设置（CLI 参数优先）
+  # discussion:
+  #   provider: openai-chat          # openai-chat | openai-responses | anthropic
+  #   model: gpt-4o-mini
+  #   api_key_env: OPENAI_API_KEY
+  #   listener_mode: silent          # silent | llm（llm = 工具调用听众评估器）
+  #   max_tool_rounds: 8

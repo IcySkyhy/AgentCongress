@@ -5,8 +5,6 @@ import json
 import os
 import signal
 import subprocess
-import urllib.error
-import urllib.request
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,57 +14,9 @@ from .errors import WorkerInfrastructureError, WorkerTimeoutError
 
 
 class DialogueAdapter(Protocol):
+    """Provider-neutral discussion interface; see agentcongress.llm for implementations."""
+
     def stream_turn(self, prompt: str) -> AsyncIterator[str]: ...
-
-
-def _post_json(url: str, api_key: str, payload: dict[str, Any], timeout_seconds: float) -> dict[str, Any]:
-    body = json.dumps(payload).encode("utf-8")
-    request = urllib.request.Request(url, data=body, headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, method="POST")
-    try:
-        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as error:
-        detail = error.read().decode("utf-8", errors="replace")[:1000]
-        raise RuntimeError(f"OpenAI-compatible API request failed ({error.code}): {detail}") from error
-    except urllib.error.URLError as error:
-        raise RuntimeError(f"OpenAI-compatible API request failed: {error.reason}") from error
-
-
-@dataclass(slots=True)
-class OpenAICompatibleDialogueAdapter:
-    """Minimal OpenAI Chat Completions adapter for meeting discussion turns."""
-
-    base_url: str
-    api_key: str
-    model: str
-    timeout_seconds: float = 120.0
-    max_tokens: int = 512
-    thinking_enabled: bool | None = None
-
-    async def complete(self, prompt: str, *, json_output: bool = False) -> str:
-        payload: dict[str, Any] = {"model": self.model, "messages": [{"role": "user", "content": prompt}], "stream": False, "max_tokens": self.max_tokens}
-        if self.thinking_enabled is not None:
-            payload["thinking"] = {"type": "enabled" if self.thinking_enabled else "disabled"}
-        if json_output:
-            payload["response_format"] = {"type": "json_object"}
-        response = await asyncio.to_thread(_post_json, f"{self.base_url.rstrip('/')}/v1/chat/completions", self.api_key, payload, self.timeout_seconds)
-        try:
-            content = response["choices"][0]["message"]["content"]
-        except (IndexError, KeyError, TypeError) as error:
-            raise RuntimeError("OpenAI-compatible API returned no assistant message") from error
-        if not isinstance(content, str) or not content.strip():
-            raise RuntimeError("OpenAI-compatible API returned an empty assistant message")
-        return content
-
-    async def stream_turn(self, prompt: str) -> AsyncIterator[str]:
-        yield await self.complete(prompt)
-
-
-def deepseek_dialogue_adapter(model: str = "deepseek-v4-flash", api_key_env: str = "DEEPSEEK_API_KEY") -> OpenAICompatibleDialogueAdapter:
-    api_key = os.environ.get(api_key_env)
-    if not api_key:
-        raise ValueError(f"{api_key_env} is required for the DeepSeek adapter")
-    return OpenAICompatibleDialogueAdapter("https://api.deepseek.com", api_key, model, thinking_enabled=False)
 
 
 @dataclass(frozen=True, slots=True)

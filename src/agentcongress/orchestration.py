@@ -32,7 +32,7 @@ async def run_speaking_turn(
     observer: SegmentObserver,
     *,
     gate: ListenerGate | None = None,
-    evaluation_timeout_seconds: float = 8.0,
+    evaluation_timeout_seconds: float = 30.0,
 ) -> FloorRequest | None:
     """Commit safe segments and stop a turn only when a listener wins the floor."""
     gate = gate or ListenerGate()

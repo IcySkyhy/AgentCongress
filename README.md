@@ -21,7 +21,8 @@ AgentCongress 是一个**事件溯源（event-sourced）的多智能体编码会
 - **人工审批流**：`manual` 合并策略要求操作员审批事件，并在审批、集成与晋升时反复核对 Git 身份一致性
 - **零模型沙箱预检**：`sandbox-preflight` 在消耗任何模型 token 之前验证 Codex 沙箱（工作区可写、主机秘密不可读、网络被拒、子进程可用）
 - **可复现实验框架**：冻结任务配置哈希、源码修订、框架修订与工作树指纹；运行级会话数与墙钟预算上限；成本为 API 等值估算而非订阅账单
-- **DeepSeek 讨论适配器**：OpenAI 兼容的 chat-completions 提供商，密钥仅从环境变量读取，绝不落盘
+- **通用多协议讨论适配器**：统一支持 OpenAI Chat Completions、OpenAI Responses 与 Anthropic Claude 三种协议，密钥仅从环境变量读取，绝不落盘
+- **全体参会智能体工具调用**：发言人与听众均通过轻量 Codex 风格代理循环运行——读取会议状态、写入黑板、读取工作区文件、调用 `request_floor` 工具申请发言权，所有工具效果持久化为可审计事件
 
 ## 快速开始
 
@@ -94,32 +95,47 @@ agentcongress task-execute examples/basic-meeting.yaml my-task --model gpt-5-cod
 `meeting-run` 执行一个有界多轮会议。它持久化记录稿、黑板条目（含证据）、发言权请求、授予、短暂打断与发言人恢复事件；每一后续轮次都会收到当前黑板与最近的记录稿窗口。
 
 ```powershell
-agentcongress meeting-run examples/basic-meeting.yaml --prompt "Design the trace storage layer." --turns 4
+agentcongress meeting-run examples/basic-meeting.yaml --prompt "Design the trace storage layer." --turns 4 --provider openai-chat --model gpt-4o-mini
 agentcongress blackboard-add examples/basic-meeting.yaml decision "Use append-only SQLite events." --actor architect
 ```
 
 听众请求经过确定性过滤与仲裁。平局使用配置的 `tie_delta`，随后偏向授予轮次较少的参与者；冷却时间跨连续授予累计，而不是每次决策后重置。
 
-## 讨论模型适配器（DeepSeek）
+## 通用讨论适配器（多协议）
 
-会议讨论可以使用 OpenAI 兼容的 chat-completions 提供商。内置的 DeepSeek 配置只从环境变量读取密钥，默认模型为 `deepseek-v4-flash`：
-
-```powershell
-$env:DEEPSEEK_API_KEY = "..."
-agentcongress api-check --provider deepseek --model deepseek-v4-flash
-```
-
-该探测只发送一次小型的非流式讨论轮次。它不会持久化 API 密钥、不会运行编码工作器，也不会改变任何 Git worktree。
-
-在 `agentcongress run` 之后记录一次真实的会议轮次，同样使用短生命周期环境变量：
+会议讨论由统一的 LLM 适配层驱动，支持三种协议：`openai-chat`（Chat Completions）、`openai-responses`（Responses API）与 `anthropic`（Claude Messages）。密钥只从环境变量读取，绝不落盘；可通过 `--base-url` 指向任意 OpenAI 兼容端点。
 
 ```powershell
-agentcongress talk examples/basic-meeting.yaml --prompt "Propose the trace storage design."
+$env:OPENAI_API_KEY = "..."
+agentcongress api-check --provider openai-chat --model gpt-4o-mini
+agentcongress api-check --provider openai-responses --model gpt-4o-mini
+
+$env:ANTHROPIC_API_KEY = "..."
+agentcongress api-check --provider anthropic --model claude-3-5-haiku-latest
 ```
 
-当前的发言人/被致辞人对从 SQLite 读取。回复在安全的句子边界分段，并记录为 `speech.segment_committed` 事件。默认观察者有意保持沉默；自主 LLM 打断是独立的策略层，而听众门禁与确定性发言权仲裁已在运行时中可用。
+该探测只发送一次小型非流式请求。它不会持久化 API 密钥、不会运行编码工作器，也不会改变任何 Git worktree。
 
-要为门禁选中的听众启用第二阶段 DeepSeek 听众评估器，加 `--listener-mode deepseek`。它会请每位被选中的听众返回 JSON 发言权请求，把分数裁剪到 `0..1`，再把所有请求送入确定性发言权策略。这是可选项，因为每次评估都是一次额外的模型请求。
+在 `agentcongress run` 之后记录一次真实的会议轮次：
+
+```powershell
+agentcongress talk examples/basic-meeting.yaml --prompt "Propose the trace storage design." --provider openai-chat --model gpt-4o-mini
+```
+
+当前的发言人/被致辞人对从 SQLite 读取。回复在安全的句子边界分段，并记录为 `speech.segment_committed` 事件。DeepSeek 等 OpenAI 兼容服务直接通过 `openai-chat` 协议使用（例如 `--base-url https://api.deepseek.com`）；专属便捷预设位于 `compatible` 分支。
+
+## 工具调用（所有参会智能体）
+
+每位参会智能体——发言人与听众——都通过轻量的 Codex 风格**代理循环**运行：模型调用工具，工具结果回传给模型，循环直到产出最终文本（`--max-tool-rounds` 限制工具轮数，默认 8）。发言人的工具集：读取记录稿/黑板/任务与发言权状态、把确认结论写入黑板，以及配置了 `workspace` 时在会议工作区内**只读**读取文件（路径 jail + 64 KiB 上限）。工具效果全部持久化为会议事件，可审计回放。
+
+听众评估器同样是工具调用智能体：听众只能通过调用 `request_floor` 工具申请发言权，工具参数（意图、urgency/relevance/novelty/confidence、理由）裁剪到 `0..1` 后送入确定性发言权策略；不调用工具即视为弃权：
+
+```powershell
+agentcongress meeting-run examples/basic-meeting.yaml --prompt "Design the trace storage layer." --turns 4 `
+  --provider anthropic --model claude-3-5-haiku-latest --listener-mode llm
+```
+
+提供商设置也可写入会议 YAML 的 `meeting.discussion` 块（CLI 参数优先于配置文件）。
 
 ## 可选研究实验室
 
@@ -158,8 +174,6 @@ agentcongress experiment-run examples/benchmarks/anthropic-original-performance.
 
 正式协议禁用网页搜索、忽略个人 Codex 配置，并使用固定的 180/180/840 秒槽位且不滚存。`self` 组把同一个分析师身份用两次；`congress` 组把第二个槽位交给独立的听众，它可以通过持久化的发言权事件弃权、打断或替换发言人。每次付费实验之前都会先做一次无模型的权限档预检。最小就绪度/安全审计见 [docs/audit.md](docs/audit.md)；被推翻的历史试点与修正后的 Stage 1.5 设计见 [docs/stage-one.md](docs/stage-one.md)；冻结的 Stage 2 套件见 [docs/stage-two.md](docs/stage-two.md)。
 
-> 口径提示：冻结套件（`stage-two-suite.yaml`）使用 180/180/840 槽位，而 Stage 2 结果文档与直接运行器代码使用 240/120/840；正式运行前请确认最终口径，详见 [docs/audit.zh-CN.md](docs/audit.zh-CN.md)。
-
 Stage 2 有独立的失败关闭（fail-closed）控制面命令。它校验冻结的五任务契约、对其取哈希，并输出每个成对的 A–E 区块，而不会启动任何模型或假装存在容器后端：
 
 ```powershell
@@ -184,7 +198,7 @@ agentcongress stage-two-plan examples/benchmarks/stage-two-suite.yaml `
 | `status` | 查看会议状态（重放事件数） |
 | `export` | 导出会议事件为 JSONL |
 | `validate` | 校验会议配置文件 |
-| `talk` | 记录一次模型支持的讨论轮次 |
+| `talk` | 记录一次代理循环支持的讨论轮次 |
 | `meeting-run` | 运行有界自主会议 |
 | `blackboard-add` | 添加经确认的共享上下文 |
 | `phase` | 变更会议阶段 |
@@ -199,7 +213,7 @@ agentcongress stage-two-plan examples/benchmarks/stage-two-suite.yaml `
 | `task-integrate` | 验证并合并任务到集成分支 |
 | `task-promote` | 将验证过的集成成果晋升到目标分支 |
 | `sandbox-preflight` | 无模型 Codex 沙箱预检 |
-| `api-check` | DeepSeek 讨论适配器连通性探测 |
+| `api-check` | 讨论适配器连通性探测（openai-chat / openai-responses / anthropic） |
 | `experiment-run` | 运行对比实验（self / congress 策略） |
 | `experiment-stage-one` | Stage 1 多模型×策略网格 |
 | `experiment-analyze` | 分析实验清单（基线 vs 对比） |
@@ -222,7 +236,6 @@ AgentCongress/
 | 文档 | 内容 |
 | --- | --- |
 | [docs/audit.md](docs/audit.md) | 最小就绪度与安全审计 |
-| [docs/audit.zh-CN.md](docs/audit.zh-CN.md) | 功能与安全结构化审计报告（中文，2026-08-17） |
 | [docs/stage-one.md](docs/stage-one.md) | 被推翻的历史试点与修正后的 Stage 1.5 设计 |
 | [docs/stage-two.md](docs/stage-two.md) | 冻结的 Stage 2 套件 |
 | [docs/stage-two-results.md](docs/stage-two-results.md) | Stage 2 实测结果与局限 |

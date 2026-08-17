@@ -4,9 +4,17 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from .adapters import OpenAICompatibleDialogueAdapter
+from .llm.agent import AgentLoop, AgentTurnResult
+from .llm.base import ChatProvider
+from .llm.tools import FloorRequestToolExecutor, floor_request_tool
 from .models import FloorIntent, FloorRequest
 from .streaming import ListenerProfile
+
+_LISTENER_SYSTEM_PROMPT = (
+    "You are a silent meeting listener. You never speak through this channel; you only decide "
+    "whether to request the floor. Ground every decision in the shared context you are given "
+    "and never fabricate meeting facts."
+)
 
 
 def _bounded_score(value: Any) -> float:
@@ -16,25 +24,43 @@ def _bounded_score(value: Any) -> float:
         return 0.0
 
 
-def _parse_json_object(content: str) -> dict[str, Any] | None:
-    start = content.find("{")
-    end = content.rfind("}")
-    if start < 0 or end < start:
-        return None
-    try:
-        value = json.loads(content[start : end + 1])
-    except json.JSONDecodeError:
-        return None
-    return value if isinstance(value, dict) else None
+def floor_observer_loop(
+    provider: ChatProvider,
+    *,
+    listener_id: str = "listener",
+    role: str = "meeting participant",
+) -> AgentLoop:
+    """Build the per-listener agent loop whose only tool is request_floor."""
+    system = f"{_LISTENER_SYSTEM_PROMPT} You are {listener_id}, acting as {role}."
+    return AgentLoop(
+        provider=provider,
+        tools=[floor_request_tool()],
+        executor=FloorRequestToolExecutor(),
+        system_prompt=system,
+        max_tool_rounds=2,
+    )
 
 
 @dataclass(slots=True)
-class DeepSeekFloorObserver:
-    """Second-stage listener evaluator backed by a JSON-mode chat completion."""
+class ToolFloorObserver:
+    """Provider-neutral listener evaluator.
 
-    adapter: OpenAICompatibleDialogueAdapter
+    A listener only takes the floor by calling the ``request_floor`` tool
+    through its own agent loop; anything else counts as abstaining.  The
+    arguments of that tool call become the bounded ``FloorRequest``.
+    """
+
+    loops: dict[str, AgentLoop]
+    default_loop: AgentLoop | None = None
+
+    def __post_init__(self) -> None:
+        if not self.loops and self.default_loop is None:
+            raise ValueError("ToolFloorObserver requires at least one agent loop")
 
     async def evaluate(self, profile: ListenerProfile, segment: str, context: str = "") -> FloorRequest | None:
+        loop = self.loops.get(profile.agent_id, self.default_loop)
+        if loop is None:
+            return None
         tags = ", ".join(sorted(profile.capability_tags)) or "none"
         prompt = f"""You are a silent meeting listener named {profile.agent_id}, acting as {profile.role}. Your capabilities are: {tags}.
 
@@ -44,20 +70,31 @@ Shared context:
 Evaluate whether you must interrupt after this completed speaker segment:
 {segment}
 
-Return exactly one JSON object with these keys: request (boolean), intent (brief_interjection|replace_speaker|replace_addressee), urgency (0..1), relevance (0..1), novelty (0..1), confidence (0..1), reason (short public string). Request the floor only for a concrete, material contribution; otherwise set request to false."""
-        data = _parse_json_object(await self.adapter.complete(prompt, json_output=True))
-        if not data or not data.get("request"):
-            return None
-        try:
-            intent = FloorIntent(str(data.get("intent", FloorIntent.BRIEF_INTERJECTION)))
-        except ValueError:
-            intent = FloorIntent.BRIEF_INTERJECTION
-        return FloorRequest(
-            agent_id=profile.agent_id,
-            intent=intent,
-            urgency=_bounded_score(data.get("urgency")),
-            relevance=_bounded_score(data.get("relevance")),
-            novelty=_bounded_score(data.get("novelty")),
-            confidence=_bounded_score(data.get("confidence")),
-            public_reason=str(data.get("reason", "listener contribution"))[:500],
-        )
+Call the request_floor tool only for a concrete, material contribution that cannot wait for your own turn. If you do not call the tool, you abstain; answer with the single word "abstain"."""
+        result = await loop.run(prompt)
+        return self._parse_request(profile.agent_id, result)
+
+    def _parse_request(self, agent_id: str, result: AgentTurnResult) -> FloorRequest | None:
+        for execution in result.tool_executions:
+            if execution.call.name != "request_floor":
+                continue
+            try:
+                data = json.loads(execution.call.arguments or "{}")
+            except json.JSONDecodeError:
+                return None
+            if not isinstance(data, dict) or not data.get("intent"):
+                return None
+            try:
+                intent = FloorIntent(str(data["intent"]))
+            except ValueError:
+                intent = FloorIntent.BRIEF_INTERJECTION
+            return FloorRequest(
+                agent_id=agent_id,
+                intent=intent,
+                urgency=_bounded_score(data.get("urgency")),
+                relevance=_bounded_score(data.get("relevance")),
+                novelty=_bounded_score(data.get("novelty")),
+                confidence=_bounded_score(data.get("confidence")),
+                public_reason=str(data.get("reason", "listener contribution"))[:500],
+            )
+        return None

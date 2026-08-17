@@ -21,7 +21,8 @@ The product core is deliberately small: meeting state, floor control, a shared b
 - **Human approval flow**: the `manual` merge policy requires an operator approval event, with Git identity re-checked at approval, integration, and promotion
 - **Zero-model sandbox preflight**: `sandbox-preflight` verifies the Codex sandbox (workspace writable, host secrets unreadable, network denied, subprocesses usable) before any model token is spent
 - **Reproducible experiment framework**: freezes the task-config hash, source revision, framework Git revision, and a working-tree fingerprint; run-wide session and wall-clock budgets; cost is an API-equivalent estimate, not a subscription claim
-- **DeepSeek discussion adapter**: an OpenAI-compatible chat-completions provider whose key is read only from an environment variable and never persisted
+- **Generic multi-protocol discussion adapter**: one layer over OpenAI Chat Completions, OpenAI Responses, and Anthropic Claude protocols; keys are read only from environment variables and never persisted
+- **Tool calling for every participant**: speakers and listeners run through a lightweight Codex-style agent loop — inspect meeting state, write blackboard entries, read workspace files, call the `request_floor` tool — with every tool effect persisted as an auditable event
 
 ## Quick start
 
@@ -94,32 +95,47 @@ The worker receives explicit task boundaries and must return a JSON task report.
 `meeting-run` executes a bounded multi-turn meeting. It persists the transcript, blackboard entries (including their evidence), floor requests, grants, brief interruptions, and speaker restoration events; every following turn receives the current blackboard and a recent transcript window.
 
 ```powershell
-agentcongress meeting-run examples/basic-meeting.yaml --prompt "Design the trace storage layer." --turns 4
+agentcongress meeting-run examples/basic-meeting.yaml --prompt "Design the trace storage layer." --turns 4 --provider openai-chat --model gpt-4o-mini
 agentcongress blackboard-add examples/basic-meeting.yaml decision "Use append-only SQLite events." --actor architect
 ```
 
 Listener requests are deterministically filtered and arbitrated. Ties use the configured `tie_delta`, then favor the participant with fewer granted turns; the cooldown applies across consecutive grants instead of resetting after every decision.
 
-## Discussion model adapters (DeepSeek)
+## Generic discussion adapters (multi-protocol)
 
-Meeting discussion can use an OpenAI-compatible chat-completions provider. The built-in DeepSeek configuration reads its key only from an environment variable and defaults to `deepseek-v4-flash`:
-
-```powershell
-$env:DEEPSEEK_API_KEY = "..."
-agentcongress api-check --provider deepseek --model deepseek-v4-flash
-```
-
-This probe sends one small non-streaming discussion turn. It does not persist the API key, run a coding worker, or change a Git worktree.
-
-To record an actual meeting turn after `agentcongress run`, use the same short-lived environment variable:
+Meeting discussion is driven by one LLM adapter layer with three protocols: `openai-chat` (Chat Completions), `openai-responses` (Responses API), and `anthropic` (Claude Messages). Keys are read only from environment variables and never persisted; `--base-url` can point at any OpenAI-compatible endpoint.
 
 ```powershell
-agentcongress talk examples/basic-meeting.yaml --prompt "Propose the trace storage design."
+$env:OPENAI_API_KEY = "..."
+agentcongress api-check --provider openai-chat --model gpt-4o-mini
+agentcongress api-check --provider openai-responses --model gpt-4o-mini
+
+$env:ANTHROPIC_API_KEY = "..."
+agentcongress api-check --provider anthropic --model claude-3-5-haiku-latest
 ```
 
-The active speaker/addressee pair is read from SQLite. The response is segmented at safe sentence boundaries and recorded as `speech.segment_committed` events. The default observer is intentionally silent; autonomous LLM interruption is a separate policy layer, while listener gates and deterministic floor arbitration are already available in the runtime.
+This probe sends one small non-streaming request. It does not persist the API key, run a coding worker, or change a Git worktree.
 
-To enable the second-stage DeepSeek listener evaluator for gate-selected listeners, add `--listener-mode deepseek`. It asks each selected listener for a JSON floor request, clamps its scores to `0..1`, then sends all requests through the deterministic floor policy. This is opt-in because each evaluation is an additional model request.
+To record an actual meeting turn after `agentcongress run`:
+
+```powershell
+agentcongress talk examples/basic-meeting.yaml --prompt "Propose the trace storage design." --provider openai-chat --model gpt-4o-mini
+```
+
+The active speaker/addressee pair is read from SQLite. The response is segmented at safe sentence boundaries and recorded as `speech.segment_committed` events. DeepSeek and other OpenAI-compatible services work through the `openai-chat` protocol (e.g. `--base-url https://api.deepseek.com`); a dedicated convenience preset lives on the `compatible` branch.
+
+## Tool calling (every participant)
+
+Every participant — speaker and listener alike — runs through a lightweight Codex-style **agent loop**: the model calls tools, tool results feed back into the model, and the loop continues until a final text answer (`--max-tool-rounds` bounds the tool rounds, default 8). Speaker tools: read the transcript/blackboard/tasks/floor state, record confirmed conclusions on the blackboard, and, when a `workspace` is configured, read files inside the meeting workspace (read-only, path-jailed, 64 KiB cap). Tool effects are persisted as meeting events and replayable.
+
+Listeners are tool-calling agents too: a listener takes the floor only by calling the `request_floor` tool, whose arguments (intent, urgency/relevance/novelty/confidence scores, reason) are clamped to `0..1` and sent through the deterministic floor policy; not calling the tool means abstaining:
+
+```powershell
+agentcongress meeting-run examples/basic-meeting.yaml --prompt "Design the trace storage layer." --turns 4 `
+  --provider anthropic --model claude-3-5-haiku-latest --listener-mode llm
+```
+
+Provider settings can also live in the `meeting.discussion` block of the meeting YAML (CLI flags take precedence).
 
 ## Optional research lab
 
@@ -158,8 +174,6 @@ agentcongress experiment-run examples/benchmarks/anthropic-original-performance.
 
 The formal protocol disables web search, ignores personal Codex configuration, and uses fixed 180/180/840-second slots without rollover. The `self` arm uses the same analyst identity twice; `congress` gives the second slot to an independent listener that may abstain, interject, or replace the speaker through persisted floor events. Every paid experiment is preceded by a model-free permission-profile preflight. For the minimal readiness/security audit, see [docs/audit.md](docs/audit.md); for the invalidated historical pilot and corrected Stage 1.5 design, see [docs/stage-one.md](docs/stage-one.md); the frozen Stage 2 suite is in [docs/stage-two.md](docs/stage-two.md).
 
-> Slot note: the frozen suite (`stage-two-suite.yaml`) uses 180/180/840, while the Stage 2 results document and the direct runner code use 240/120/840; confirm the final convention before a formal run (see [docs/audit.zh-CN.md](docs/audit.zh-CN.md)).
-
 Stage 2 has a separate fail-closed control-plane command. It validates the frozen five-task contract, hashes it, and emits every paired A–E block without starting a model or pretending that a container backend exists:
 
 ```powershell
@@ -184,7 +198,7 @@ A non-zero exit is expected until a measured environment lock binds the exact su
 | `status` | Show meeting state (replayed event count) |
 | `export` | Export meeting events as JSONL |
 | `validate` | Validate a meeting configuration |
-| `talk` | Record one model-backed discussion turn |
+| `talk` | Record one agent-loop-backed discussion turn |
 | `meeting-run` | Run a bounded autonomous meeting |
 | `blackboard-add` | Add confirmed shared context |
 | `phase` | Change the meeting phase |
@@ -199,7 +213,7 @@ A non-zero exit is expected until a measured environment lock binds the exact su
 | `task-integrate` | Verify and merge a task into the integration branch |
 | `task-promote` | Promote verified integrated work to the target branch |
 | `sandbox-preflight` | Model-free Codex worker sandbox verification |
-| `api-check` | DeepSeek discussion adapter connectivity probe |
+| `api-check` | Discussion adapter connectivity probe (openai-chat / openai-responses / anthropic) |
 | `experiment-run` | Run a comparative experiment (self / congress) |
 | `experiment-stage-one` | Stage 1 model × strategy grid |
 | `experiment-analyze` | Analyze experiment manifests (baseline vs comparison) |
@@ -222,7 +236,6 @@ AgentCongress/
 | Document | Contents |
 | --- | --- |
 | [docs/audit.md](docs/audit.md) | Minimal readiness and security audit |
-| [docs/audit.zh-CN.md](docs/audit.zh-CN.md) | Structured functional & security audit report (Chinese, 2026-08-17) |
 | [docs/stage-one.md](docs/stage-one.md) | Invalidated historical pilot and corrected Stage 1.5 design |
 | [docs/stage-two.md](docs/stage-two.md) | Frozen Stage 2 suite |
 | [docs/stage-two-results.md](docs/stage-two-results.md) | Measured Stage 2 results and limitations |

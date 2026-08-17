@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from agentcongress.adapters import CodexWorkerAdapter, OpenAICompatibleDialogueAdapter, deepseek_dialogue_adapter, detect_codex_infrastructure_failure
+from agentcongress.adapters import CodexWorkerAdapter, detect_codex_infrastructure_failure
 from agentcongress.errors import WorkerInfrastructureError
 
 
@@ -42,47 +42,6 @@ def test_codex_worker_uses_only_frozen_builtin_permission_profiles() -> None:
             permission_profile=":workspace",
             enabled_features=("use_legacy_landlock",),
         )
-
-
-def test_openai_compatible_dialogue_adapter_uses_chat_completions(monkeypatch) -> None:
-    captured = {}
-
-    def fake_post(url, api_key, payload, timeout_seconds):
-        captured.update(url=url, api_key=api_key, payload=payload, timeout_seconds=timeout_seconds)
-        return {"choices": [{"message": {"content": "READY"}}]}
-
-    monkeypatch.setattr("agentcongress.adapters._post_json", fake_post)
-    adapter = OpenAICompatibleDialogueAdapter("https://example.test", "secret", "example-model", thinking_enabled=False)
-
-    async def collect() -> str:
-        return "".join([chunk async for chunk in adapter.stream_turn("hello")])
-
-    assert asyncio.run(collect()) == "READY"
-    assert captured["url"] == "https://example.test/v1/chat/completions"
-    assert captured["payload"]["thinking"] == {"type": "disabled"}
-
-
-def test_openai_compatible_adapter_can_request_json_output(monkeypatch) -> None:
-    captured = {}
-
-    def fake_post(url, api_key, payload, timeout_seconds):
-        captured.update(payload)
-        return {"choices": [{"message": {"content": "{}"}}]}
-
-    monkeypatch.setattr("agentcongress.adapters._post_json", fake_post)
-    adapter = OpenAICompatibleDialogueAdapter("https://example.test", "secret", "example-model")
-    assert asyncio.run(adapter.complete("return json", json_output=True)) == "{}"
-    assert captured["response_format"] == {"type": "json_object"}
-
-
-def test_deepseek_adapter_reads_key_only_from_environment(monkeypatch) -> None:
-    monkeypatch.setenv("TEST_DEEPSEEK_KEY", "secret")
-    adapter = deepseek_dialogue_adapter(api_key_env="TEST_DEEPSEEK_KEY")
-    assert adapter.model == "deepseek-v4-flash"
-    assert adapter.api_key == "secret"
-    monkeypatch.delenv("TEST_DEEPSEEK_KEY")
-    with pytest.raises(ValueError, match="TEST_DEEPSEEK_KEY"):
-        deepseek_dialogue_adapter(api_key_env="TEST_DEEPSEEK_KEY")
 
 
 def test_codex_worker_closes_standard_input(monkeypatch, tmp_path: Path) -> None:

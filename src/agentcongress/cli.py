@@ -8,12 +8,16 @@ import sys
 from pathlib import Path
 
 from .accounting import Budget, BudgetGovernor
-from .adapters import CodexWorkerAdapter, deepseek_dialogue_adapter
-from .config import load_config
+from .adapters import CodexWorkerAdapter
+from .config import DiscussionConfig, MeetingConfig, load_config
 from .discussion import MeetingController, NoopObserver, run_dialogue_turn
-from .listeners import DeepSeekFloorObserver
 from .events import SQLiteEventStore
 from .evaluation import ExperimentRunner, five_arm_definitions, stage_one_summary
+from .llm.agent import AgentLoop, DialogueAgentAdapter
+from .llm.base import ChatMessage
+from .llm.registry import PROTOCOLS, create_provider, provider_defaults
+from .llm.tools import meeting_tools
+from .listeners import ToolFloorObserver, floor_observer_loop
 from .models import ApprovalDecision, MeetingPhase, Task, TaskReport, TaskStatus
 from .prompts import build_worker_prompt
 from .runtime import CongressRuntime
@@ -33,7 +37,7 @@ from .workspace import TaskWorktree, WorkspaceManager
 from .workers import execute_worker_task
 
 
-def _runtime_for_config(config_path: str, database: str | None) -> tuple[CongressRuntime, object]:
+def _runtime_for_config(config_path: str, database: str | None) -> tuple[CongressRuntime, MeetingConfig]:
     config = load_config(Path(config_path))
     path = Path(database) if database else Path(".agentcongress") / "runs" / config.meeting_id / "events.db"
     return CongressRuntime.resume(config.meeting_id, path, config.roster), config
@@ -51,6 +55,64 @@ def _add_codex_backend_arguments(parser: argparse.ArgumentParser) -> None:
         action="append",
         default=[],
         help="Repeatable Codex sandbox feature flag.",
+    )
+
+
+_SPEAKER_SYSTEM_PROMPT = (
+    "You are a participant in an auditable multi-agent coding meeting. The harness records "
+    "your contribution as committed speech segments and persists every tool call you make as "
+    "meeting evidence. Use tools to ground your claims in the meeting state; record only "
+    "confirmed, defensible conclusions on the blackboard."
+)
+
+
+def _add_provider_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--provider", choices=list(PROTOCOLS), default=None, help="Provider protocol.")
+    parser.add_argument("--model", help="Model name; defaults per protocol.")
+    parser.add_argument("--api-key-env", help="Environment variable holding the API key.")
+    parser.add_argument("--base-url", help="Optional base URL override for OpenAI-compatible endpoints.")
+    parser.add_argument("--max-tool-rounds", type=int, default=None, help="Tool round budget per agent turn (default 8).")
+
+
+def _provider_from_args(config: MeetingConfig, args: argparse.Namespace):
+    discussion = config.discussion
+    provider = args.provider or (discussion.provider if discussion else None) or "openai-chat"
+    defaults = provider_defaults(provider)
+    model = args.model or (discussion.model if discussion else None) or defaults["model"]
+    api_key_env = args.api_key_env or (discussion.api_key_env if discussion else None) or defaults["api_key_env"]
+    base_url = args.base_url or (discussion.base_url if discussion else None)
+    return create_provider(provider, model=model, api_key_env=api_key_env, base_url=base_url)
+
+
+def _workspace_root(config: MeetingConfig) -> Path | None:
+    if config.workspace is None:
+        return None
+    return WorkspaceManager(config.workspace.repository, config.meeting_id, config.workspace.base_ref).root
+
+
+def _speaker_loop(
+    runtime: CongressRuntime,
+    config: MeetingConfig,
+    provider,
+    max_tool_rounds: int | None,
+) -> AgentLoop:
+    discussion = config.discussion
+    rounds = max_tool_rounds or (discussion.max_tool_rounds if discussion else None) or 8
+    tools, executor = meeting_tools(runtime, workspace_root=_workspace_root(config))
+    return AgentLoop(provider, tools, executor, system_prompt=_SPEAKER_SYSTEM_PROMPT, max_tool_rounds=rounds)
+
+
+def _listener_mode(config: MeetingConfig, args: argparse.Namespace) -> str:
+    discussion = config.discussion
+    return args.listener_mode or (discussion.listener_mode if discussion else None) or "silent"
+
+
+def _llm_observer(config: MeetingConfig, provider) -> ToolFloorObserver:
+    return ToolFloorObserver(
+        loops={
+            agent.agent_id: floor_observer_loop(provider, listener_id=agent.agent_id, role=agent.role)
+            for agent in config.agents
+        }
     )
 
 
@@ -114,27 +176,25 @@ def main() -> int:
         action="store_true",
         help="Probe both :read-only and :workspace, as required by the three-slot worker protocol.",
     )
-    api_check = subparsers.add_parser("api-check")
-    api_check.add_argument("--provider", choices=["deepseek"], default="deepseek")
-    api_check.add_argument("--model", default="deepseek-v4-flash")
-    api_check.add_argument("--api-key-env", default="DEEPSEEK_API_KEY")
+    api_check = subparsers.add_parser("api-check", help="Probe one discussion provider protocol.")
+    api_check.add_argument("--provider", choices=list(PROTOCOLS), default="openai-chat")
+    api_check.add_argument("--model")
+    api_check.add_argument("--api-key-env")
+    api_check.add_argument("--base-url")
     api_check.add_argument("--prompt", default="Reply with exactly: READY")
-    talk = subparsers.add_parser("talk", help="Record one model-backed meeting turn.")
+    talk = subparsers.add_parser("talk", help="Record one agent-loop-backed meeting turn.")
     talk.add_argument("config")
     talk.add_argument("--prompt", required=True)
     talk.add_argument("--database")
-    talk.add_argument("--provider", choices=["deepseek"], default="deepseek")
-    talk.add_argument("--model", default="deepseek-v4-flash")
-    talk.add_argument("--api-key-env", default="DEEPSEEK_API_KEY")
-    talk.add_argument("--listener-mode", choices=["silent", "deepseek"], default="silent")
+    _add_provider_arguments(talk)
+    talk.add_argument("--listener-mode", choices=["silent", "llm"], default=None)
     meeting = subparsers.add_parser("meeting-run", help="Run a bounded autonomous meeting.")
     meeting.add_argument("config")
     meeting.add_argument("--prompt", required=True)
     meeting.add_argument("--turns", type=int, default=3)
     meeting.add_argument("--database")
-    meeting.add_argument("--model", default="deepseek-v4-flash")
-    meeting.add_argument("--api-key-env", default="DEEPSEEK_API_KEY")
-    meeting.add_argument("--listener-mode", choices=["silent", "deepseek"], default="silent")
+    _add_provider_arguments(meeting)
+    meeting.add_argument("--listener-mode", choices=["silent", "llm"], default=None)
     blackboard = subparsers.add_parser("blackboard-add", help="Add confirmed shared context.")
     blackboard.add_argument("config")
     blackboard.add_argument("kind")
@@ -338,27 +398,32 @@ def main() -> int:
         runtime.close()
         print(f"{message} meeting {config.meeting_id}")
     elif args.command == "api-check":
-        adapter = deepseek_dialogue_adapter(args.model, args.api_key_env)
-
-        async def collect() -> str:
-            return "".join([chunk async for chunk in adapter.stream_turn(args.prompt)])
-
-        response = asyncio.run(collect())
-        print(f"provider={args.provider} model={args.model} response={response}")
+        defaults = provider_defaults(args.provider)
+        provider = create_provider(
+            args.provider,
+            model=args.model or defaults["model"],
+            api_key_env=args.api_key_env or defaults["api_key_env"],
+            base_url=args.base_url,
+        )
+        response = asyncio.run(provider.complete([ChatMessage("user", args.prompt)]))
+        print(f"provider={provider.name} model={provider.model} response={response.content}")
     elif args.command == "talk":
         runtime, config = _runtime_for_config(args.config, args.database)
-        adapter = deepseek_dialogue_adapter(args.model, args.api_key_env)
+        provider = _provider_from_args(config, args)
+        loop = _speaker_loop(runtime, config, provider, args.max_tool_rounds)
+        observer = _llm_observer(config, provider) if _listener_mode(config, args) == "llm" else None
         try:
-            observer = DeepSeekFloorObserver(adapter) if args.listener_mode == "deepseek" else None
-            winner = asyncio.run(run_dialogue_turn(runtime, config, adapter, args.prompt, observer))
+            winner = asyncio.run(run_dialogue_turn(runtime, config, DialogueAgentAdapter(loop), args.prompt, observer))
         finally:
             runtime.close()
         print(f"recorded discussion turn; floor={'retained' if winner is None else winner.agent_id}")
     elif args.command == "meeting-run":
         runtime, config = _runtime_for_config(args.config, args.database)
-        adapter = deepseek_dialogue_adapter(args.model, args.api_key_env)
+        provider = _provider_from_args(config, args)
+        loop = _speaker_loop(runtime, config, provider, args.max_tool_rounds)
+        adapter = DialogueAgentAdapter(loop)
+        observer = _llm_observer(config, provider) if _listener_mode(config, args) == "llm" else None
         try:
-            observer = DeepSeekFloorObserver(adapter) if args.listener_mode == "deepseek" else None
             controller = MeetingController(runtime, config, {agent.agent_id: adapter for agent in config.agents}, observer or NoopObserver())
             turns = asyncio.run(controller.run(args.prompt, max_turns=args.turns))
         finally:

@@ -35,6 +35,8 @@ def dialogue_prompt(runtime: CongressRuntime, config: MeetingConfig, instruction
     return f"""You are meeting participant {speaker}, acting as {_agent_role(config, speaker)}. Address {addressee}.
 Keep your contribution focused, evidence-based, and made of complete sentences. Do not restate settled points.
 
+You may use tools to inspect the meeting (transcript, blackboard, tasks, floor) and, when a workspace is configured, to read files inside it; you may also record confirmed entries on the blackboard. Use tools before asserting facts you cannot verify from the context above.
+
 Meeting instruction:
 {instruction.strip()}
 
