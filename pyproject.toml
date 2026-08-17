@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentcongress"
+version = "0.1.0"
+description = "Event-sourced multi-agent meeting harness for coding work"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+authors = [{ name = "AgentCongress contributors" }]
+dependencies = ["PyYAML>=6,<7"]
+
+[project.optional-dependencies]
+dev = ["pytest>=9,<10"]
+
+[project.scripts]
+agentcongress = "agentcongress.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+agentcongress = ["*.schema.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

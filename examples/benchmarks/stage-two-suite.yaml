@@ -1,0 +1,328 @@
+schema_version: 1
+
+suite:
+  id: stage-two-v1
+  title: Five-task controlled harness comparison
+  selection_frozen_at: "2026-08-12"
+  protocol_frozen: true
+  environment_frozen: false
+  readiness: blocked_pending_measured_environment_lock_and_oracle_controls
+  intended_claim: comparative_harness_effect
+  contamination_note: >
+    Every selected task is public. Results compare orchestration conditions under
+    one frozen protocol; they are not evidence of uncontaminated frontier capability.
+
+sources:
+  swe_bench_verified_mini:
+    kind: huggingface_dataset
+    repository: MariusHobbhahn/swe-bench-verified-mini
+    revision: b316c349947c29963fce3f4a65967c9807a4b673
+    split: test
+    status: third_party_50_instance_proxy_not_official_subset
+    upstream_dataset: SWE-bench/SWE-bench_Verified
+    harness_repository: https://github.com/SWE-bench/SWE-bench
+    harness_revision: 7e578260da58400f307e435e43d1d2ab29d686f6
+  terminal_bench_2:
+    kind: git_repository
+    repository: https://github.com/harbor-framework/terminal-bench-2
+    revision: 2fd12b88aafdd04a52c298e3940bcb189f9766d6
+    harness: Harbor
+    dataset_release: terminal-bench@2.0
+
+tasks:
+  - id: django__django-12143
+    family: swe_bench_verified_mini
+    source: swe_bench_verified_mini
+    source_locator: dataset_row_by_instance_id
+    repository: django/django
+    base_commit: 5573a54d409bb98b5c5acdb308310bed02d392c2
+    environment_setup_commit: 0668164b4ac93a5be79f5b87fae83c657124d9ab
+    focus: admin_formset_prefix_regex_correctness
+    image:
+      resolver: pinned_official_swe_bench_harness
+      declared_reference: swebench/sweb.eval.x86_64.django_1776_django-12143:latest
+      registry: docker.io
+      platform: linux/amd64
+      digest_kind: platform_manifest
+      source_index_digest: null
+      digest: sha256:5ac2fa4efedc1a89f200f034bcee258fd76f334b253b93e8419711998bb9b55b
+      resolved_at: "2026-08-12"
+      readiness: registry_manifest_digest_resolved_oracle_pending
+    resources:
+      cpus: 2
+      memory_mb: 8192
+      storage_mb: 20480
+    scorer:
+      implementation: pinned_official_swe_bench_harness
+      primary_metric: resolved
+      direction: higher
+      success_value: 1
+
+  - id: django__django-12273
+    family: swe_bench_verified_mini
+    source: swe_bench_verified_mini
+    source_locator: dataset_row_by_instance_id
+    repository: django/django
+    base_commit: 927c903f3cd25c817c21738328b53991c035b415
+    environment_setup_commit: 0668164b4ac93a5be79f5b87fae83c657124d9ab
+    focus: multi_table_inheritance_primary_key_reset
+    image:
+      resolver: pinned_official_swe_bench_harness
+      declared_reference: swebench/sweb.eval.x86_64.django_1776_django-12273:latest
+      registry: docker.io
+      platform: linux/amd64
+      digest_kind: platform_manifest
+      source_index_digest: null
+      digest: sha256:3ae8fd6492cb42cefb6e0ba014888c516f42404746f2338758a6d4bea4b3edb7
+      resolved_at: "2026-08-12"
+      readiness: registry_manifest_digest_resolved_oracle_pending
+    resources:
+      cpus: 2
+      memory_mb: 8192
+      storage_mb: 20480
+    scorer:
+      implementation: pinned_official_swe_bench_harness
+      primary_metric: resolved
+      direction: higher
+      success_value: 1
+
+  - id: fix-ocaml-gc
+    family: terminal_bench_2
+    source: terminal_bench_2
+    source_locator: fix-ocaml-gc
+    focus: low_level_runtime_debugging
+    image:
+      declared_reference: alexgshaw/fix-ocaml-gc:20251031
+      registry: docker.io
+      platform: linux/amd64
+      digest_kind: platform_manifest
+      source_index_digest: null
+      digest: sha256:66a1e2293076c9ef27a118611b3089a6284fdf467fd4675592d0cce7d11e5b0b
+      resolved_at: "2026-08-12"
+      readiness: registry_manifest_digest_resolved_oracle_pending
+    resources:
+      cpus: 1
+      memory_mb: 2048
+      storage_mb: 10240
+    upstream_agent_timeout_seconds: 3600
+    verifier_timeout_seconds: 3600
+    scorer:
+      implementation: pinned_harbor_verifier
+      primary_metric: reward
+      direction: higher
+      success_value: 1.0
+
+  - id: db-wal-recovery
+    family: terminal_bench_2
+    source: terminal_bench_2
+    source_locator: db-wal-recovery
+    focus: sqlite_write_ahead_log_recovery
+    image:
+      declared_reference: alexgshaw/db-wal-recovery:20251031
+      registry: docker.io
+      platform: linux/amd64
+      digest_kind: platform_manifest
+      source_index_digest: null
+      digest: sha256:0e33ea5ec823975d1bd6c3778395c9f94251dd88f571146057bff6adb7e4594e
+      resolved_at: "2026-08-12"
+      readiness: registry_manifest_digest_resolved_oracle_pending
+    resources:
+      cpus: 1
+      memory_mb: 2048
+      storage_mb: 10240
+    upstream_agent_timeout_seconds: 900
+    verifier_timeout_seconds: 900
+    scorer:
+      implementation: pinned_harbor_verifier
+      primary_metric: reward
+      direction: higher
+      success_value: 1.0
+
+  - id: fix-code-vulnerability
+    family: terminal_bench_2
+    source: terminal_bench_2
+    source_locator: fix-code-vulnerability
+    focus: crlf_header_injection_remediation
+    image:
+      declared_reference: alexgshaw/fix-code-vulnerability:20251031
+      registry: docker.io
+      platform: linux/amd64
+      digest_kind: platform_manifest
+      source_index_digest: null
+      digest: sha256:cac325252991f823713b2d0441502972901dd782bd67f66c03d9b1e410dac5c0
+      resolved_at: "2026-08-12"
+      readiness: registry_manifest_digest_resolved_oracle_pending
+    resources:
+      cpus: 1
+      memory_mb: 2048
+      storage_mb: 10240
+    upstream_agent_timeout_seconds: 900
+    verifier_timeout_seconds: 900
+    scorer:
+      implementation: pinned_harbor_verifier
+      primary_metric: reward
+      direction: higher
+      success_value: 1.0
+
+isolation:
+  agent_visible:
+    - instruction
+    - prepared_task_environment
+  agent_forbidden:
+    - source_solution_directory
+    - source_tests_directory
+    - verifier_files
+    - gold_patch
+  network_during_agent: disabled
+  network_during_verifier: disabled
+  verifier_mount: after_agent_exit
+  source_acquisition: sealed_control_plane_only
+  upstream_network_setting_override: >
+    Terminal-Bench manifests currently permit internet access. Stage 2 overrides
+    that setting to disabled for every arm; an offline oracle failure excludes
+    the task instead of enabling network for selected runs.
+
+oracle_gate:
+  required_before_any_model_run: true
+  checks:
+    - source_revision_and_task_locator_resolve
+    - image_reference_resolves_to_recorded_immutable_digest
+    - verifier_files_and_solution_are_absent_during_agent_phase
+    - network_egress_probe_fails_during_agent_phase
+    - official_oracle_reaches_success_value_from_a_clean_environment
+    - no_op_control_does_not_reach_success_value
+    - verifier_output_is_machine_readable_and_archived
+  failure_action: exclude_task_and_replace_before_unblinding_results
+
+budget:
+  worker_sessions: 3
+  total_agent_seconds: 1200
+  no_rollover: true
+  slots:
+    - name: analysis
+      max_seconds: 180
+      filesystem: read_only
+    - name: critique
+      max_seconds: 180
+      filesystem: read_only
+    - name: execution
+      max_seconds: 840
+      filesystem: workspace_write
+  validation_and_scoring: outside_agent_budget_with_task_specific_hard_timeout
+  reasoning_effort: high
+
+conditions:
+  - id: A
+    label: LLL-self
+    strategy: self
+    analysis_model: gpt-5.6-luna
+    critique_model: gpt-5.6-luna
+    critique_identity: same_as_analyst
+    execution_model: gpt-5.6-luna
+  - id: B
+    label: LLL-congress
+    strategy: congress
+    analysis_model: gpt-5.6-luna
+    critique_model: gpt-5.6-luna
+    critique_identity: independent_listener
+    execution_model: gpt-5.6-luna
+  - id: C
+    label: SSS-self
+    strategy: self
+    analysis_model: gpt-5.6-sol
+    critique_model: gpt-5.6-sol
+    critique_identity: same_as_analyst
+    execution_model: gpt-5.6-sol
+  - id: D
+    label: LLS-self
+    strategy: self
+    analysis_model: gpt-5.6-luna
+    critique_model: gpt-5.6-luna
+    critique_identity: same_as_analyst
+    execution_model: gpt-5.6-sol
+  - id: E
+    label: LLS-congress
+    strategy: congress
+    analysis_model: gpt-5.6-luna
+    critique_model: gpt-5.6-luna
+    critique_identity: independent_listener
+    execution_model: gpt-5.6-sol
+
+predeclared_contrasts:
+  - id: congress_same_model
+    expression: B-A
+  - id: congress_with_sol_executor
+    expression: E-D
+  - id: luna_deliberation_substitution
+    expression: D-C
+  - id: cheap_congress_leverage
+    expression: E-C
+
+run_design:
+  pilot:
+    repetitions_per_task_condition: 1
+    purpose: calibration_and_failure_discovery_only
+  confirmatory:
+    repetitions_per_task_condition: 2
+    third_repetition_trigger: discordant_or_predeclared_near_threshold_result
+    third_repetition_scope: all_five_conditions_for_that_task
+  randomization:
+    unit: condition_order_within_task_and_repetition
+    seed: 20260812
+  pairing_unit: task_and_repetition
+
+failure_classes:
+  - infra_error
+  - budget_timeout
+  - protocol_failure
+  - human_input_required
+  - validation_failure
+  - valid_noop
+  - valid_submission
+  - scorer_error
+
+analysis_policy:
+  objective_success_is_separate_from_execution_status: true
+  infra_error: replace_entire_paired_block_and_retain_in_reliability_appendix
+  budget_timeout: intention_to_treat_failure_with_partial_score_diagnostic_only
+  quality_aggregation: paired_by_task_and_repetition
+  fewer_than_three_usable_pairs: exploratory
+
+run_manifest_requirements:
+  - framework_git_sha
+  - clean_framework_tree_or_archived_tree_hash
+  - codex_cli_version
+  - operating_system_and_architecture
+  - python_version
+  - container_runtime_version
+  - source_revision
+  - task_metadata_sha256
+  - image_digest
+  - verifier_sha256
+  - prompt_and_report_schema_sha256
+  - model_and_reasoning_effort_by_slot
+  - randomization_seed_and_realized_order
+  - usage_by_model
+  - wall_time_by_slot
+  - execution_status
+  - objective_success
+  - structured_score
+
+current_environment:
+  observed_at: "2026-08-12"
+  windows_workspace:
+    python: 3.12.13-project-venv
+    docker: unavailable
+    wsl: unavailable
+    readiness: blocked
+  k0:
+    os: Ubuntu-Linux-x86_64
+    python: 3.12.3
+    docker_cli: available
+    docker_daemon: unavailable_on_host
+    docker_socket: absent_on_host
+    init_system: no-systemd
+    required_container_capabilities: unavailable
+    qemu_tcg: available
+    isolated_guest_docker_smoke: passed_zero_model_synthetic_boundary_only
+    readiness: blocked_pending_real_harbor_oracle_and_nop

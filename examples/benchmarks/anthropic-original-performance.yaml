@@ -1,0 +1,17 @@
+task:
+  id: anthropic-original-performance
+  title: Optimize Anthropic's simulated-accelerator take-home
+  prompt: >
+    Improve the performance of the supplied implementation for Anthropic's
+    original performance take-home. Preserve the task semantics. Do not modify
+    tests, the simulator, task instructions, Git metadata, or any file outside
+    perf_takehome.py. Use the supplied test runner to measure progress.
+  allowed_paths:
+    - perf_takehome.py
+  validation_commands:
+    - "{python} tests/submission_tests.py CorrectnessTests"
+  scoring_command: '"{python}" "{harness}/examples/benchmarks/scorers/anthropic_performance.py" "{worktree}"'
+  score:
+    direction: lower
+    baseline: 147734
+    success_value: 18531

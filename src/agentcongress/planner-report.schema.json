@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AgentCongress planner memo",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "hypotheses", "validation_plan", "risks"],
+  "properties": {
+    "summary": {"type": "string", "minLength": 1},
+    "hypotheses": {"type": "array", "items": {"type": "string"}},
+    "validation_plan": {"type": "array", "items": {"type": "string"}},
+    "risks": {"type": "array", "items": {"type": "string"}}
+  }
+}

@@ -1,0 +1,15 @@
+meeting:
+  id: architecture-review
+  initial_speaker: architect
+  initial_addressee: reviewer
+  execution_mode: continuous
+  agents:
+    - id: architect
+      role: system architect
+      capability_tags: [architecture, interfaces]
+    - id: reviewer
+      role: skeptical code reviewer
+      capability_tags: [security, testing]
+    - id: implementer
+      role: implementation specialist
+      capability_tags: [python, git]

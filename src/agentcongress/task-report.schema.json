@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AgentCongress task report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "changed_files", "validation", "risks", "commit", "needs_human_input"],
+  "properties": {
+    "summary": {"type": "string", "minLength": 1},
+    "changed_files": {"type": "array", "items": {"type": "string"}},
+    "validation": {"type": "array", "items": {"type": "string"}},
+    "risks": {"type": "array", "items": {"type": "string"}},
+    "commit": {"type": ["string", "null"]},
+    "needs_human_input": {"type": "boolean"}
+  }
+}
