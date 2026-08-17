@@ -116,6 +116,26 @@ def _llm_observer(config: MeetingConfig, provider) -> ToolFloorObserver:
     )
 
 
+def _deepseek_observer(args: argparse.Namespace) -> ToolFloorObserver:
+    """Legacy shortcut: a DeepSeek-backed listener evaluator (compatible branch)."""
+    provider = create_provider(
+        "deepseek",
+        model=args.model,
+        api_key_env=args.api_key_env or "DEEPSEEK_API_KEY",
+        base_url=args.base_url,
+    )
+    return ToolFloorObserver(default_loop=floor_observer_loop(provider))
+
+
+def _discussion_observer(config: MeetingConfig, args: argparse.Namespace, provider):
+    mode = _listener_mode(config, args)
+    if mode == "llm":
+        return _llm_observer(config, provider)
+    if mode == "deepseek":
+        return _deepseek_observer(args)
+    return None
+
+
 def _sandbox_preflight_failure(
     result: SandboxPreflightResult | WorkerSandboxPreflightResult,
 ) -> dict[str, object]:
@@ -187,14 +207,14 @@ def main() -> int:
     talk.add_argument("--prompt", required=True)
     talk.add_argument("--database")
     _add_provider_arguments(talk)
-    talk.add_argument("--listener-mode", choices=["silent", "llm"], default=None)
+    talk.add_argument("--listener-mode", choices=["silent", "llm", "deepseek"], default=None)
     meeting = subparsers.add_parser("meeting-run", help="Run a bounded autonomous meeting.")
     meeting.add_argument("config")
     meeting.add_argument("--prompt", required=True)
     meeting.add_argument("--turns", type=int, default=3)
     meeting.add_argument("--database")
     _add_provider_arguments(meeting)
-    meeting.add_argument("--listener-mode", choices=["silent", "llm"], default=None)
+    meeting.add_argument("--listener-mode", choices=["silent", "llm", "deepseek"], default=None)
     blackboard = subparsers.add_parser("blackboard-add", help="Add confirmed shared context.")
     blackboard.add_argument("config")
     blackboard.add_argument("kind")
@@ -411,7 +431,7 @@ def main() -> int:
         runtime, config = _runtime_for_config(args.config, args.database)
         provider = _provider_from_args(config, args)
         loop = _speaker_loop(runtime, config, provider, args.max_tool_rounds)
-        observer = _llm_observer(config, provider) if _listener_mode(config, args) == "llm" else None
+        observer = _discussion_observer(config, args, provider)
         try:
             winner = asyncio.run(run_dialogue_turn(runtime, config, DialogueAgentAdapter(loop), args.prompt, observer))
         finally:
@@ -422,7 +442,7 @@ def main() -> int:
         provider = _provider_from_args(config, args)
         loop = _speaker_loop(runtime, config, provider, args.max_tool_rounds)
         adapter = DialogueAgentAdapter(loop)
-        observer = _llm_observer(config, provider) if _listener_mode(config, args) == "llm" else None
+        observer = _discussion_observer(config, args, provider)
         try:
             controller = MeetingController(runtime, config, {agent.agent_id: adapter for agent in config.agents}, observer or NoopObserver())
             turns = asyncio.run(controller.run(args.prompt, max_turns=args.turns))

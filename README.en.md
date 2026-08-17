@@ -122,7 +122,19 @@ To record an actual meeting turn after `agentcongress run`:
 agentcongress talk examples/basic-meeting.yaml --prompt "Propose the trace storage design." --provider openai-chat --model gpt-4o-mini
 ```
 
-The active speaker/addressee pair is read from SQLite. The response is segmented at safe sentence boundaries and recorded as `speech.segment_committed` events. DeepSeek and other OpenAI-compatible services work through the `openai-chat` protocol (e.g. `--base-url https://api.deepseek.com`); a dedicated convenience preset lives on the `compatible` branch.
+The active speaker/addressee pair is read from SQLite. The response is segmented at safe sentence boundaries and recorded as `speech.segment_committed` events. DeepSeek and other OpenAI-compatible services also work through the `openai-chat` protocol (e.g. `--base-url https://api.deepseek.com`); this branch adds a dedicated convenience preset:
+
+### DeepSeek preset (this branch)
+
+The `deepseek` protocol preset pins the DeepSeek endpoint, the `DEEPSEEK_API_KEY` environment variable, and the `deepseek-v4-flash` default model:
+
+```powershell
+$env:DEEPSEEK_API_KEY = "..."
+agentcongress api-check --provider deepseek
+agentcongress talk examples/basic-meeting.yaml --prompt "Propose the trace storage design." --provider deepseek
+```
+
+The legacy `--listener-mode deepseek` shortcut is preserved as a DeepSeek listener evaluator (equivalent to `--provider deepseek --listener-mode llm`).
 
 ## Tool calling (every participant)
 

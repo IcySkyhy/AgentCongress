@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from .llm.agent import AgentLoop, AgentTurnResult
 from .llm.base import ChatProvider
+from .llm.deepseek import DEFAULT_DEEPSEEK_MODEL
 from .llm.tools import FloorRequestToolExecutor, floor_request_tool
 from .models import FloorIntent, FloorRequest
 from .streaming import ListenerProfile
@@ -50,7 +51,7 @@ class ToolFloorObserver:
     arguments of that tool call become the bounded ``FloorRequest``.
     """
 
-    loops: dict[str, AgentLoop]
+    loops: dict[str, AgentLoop] = field(default_factory=dict)
     default_loop: AgentLoop | None = None
 
     def __post_init__(self) -> None:
@@ -98,3 +99,26 @@ Call the request_floor tool only for a concrete, material contribution that cann
                 public_reason=str(data.get("reason", "listener contribution"))[:500],
             )
         return None
+
+
+class DeepSeekFloorObserver:
+    """DeepSeek-backed listener evaluator (compatible branch).
+
+    Migrated from the original JSON-mode observer onto the generic tool
+    observer: listeners still produce the same bounded ``FloorRequest``, but
+    now through a ``request_floor`` tool call inside a DeepSeek agent loop.
+    """
+
+    def __init__(
+        self,
+        model: str = DEFAULT_DEEPSEEK_MODEL,
+        api_key_env: str = "DEEPSEEK_API_KEY",
+        base_url: str | None = None,
+    ) -> None:
+        from .llm.registry import create_provider
+
+        provider = create_provider("deepseek", model=model, api_key_env=api_key_env, base_url=base_url)
+        self.observer = ToolFloorObserver(default_loop=floor_observer_loop(provider))
+
+    async def evaluate(self, profile: ListenerProfile, segment: str, context: str = "") -> FloorRequest | None:
+        return await self.observer.evaluate(profile, segment, context)

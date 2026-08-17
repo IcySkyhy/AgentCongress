@@ -5,15 +5,17 @@ from __future__ import annotations
 import os
 
 from .base import ChatProvider
+from .deepseek import DEFAULT_DEEPSEEK_BASE_URL, DEFAULT_DEEPSEEK_MODEL, DeepSeekProvider
 from .providers import AnthropicProvider, OpenAIChatProvider, OpenAIResponsesProvider
-
-PROTOCOLS = ("openai-chat", "openai-responses", "anthropic")
 
 _DEFAULTS: dict[str, dict[str, str]] = {
     "openai-chat": {"model": "gpt-4o-mini", "api_key_env": "OPENAI_API_KEY"},
     "openai-responses": {"model": "gpt-4o-mini", "api_key_env": "OPENAI_API_KEY"},
     "anthropic": {"model": "claude-3-5-haiku-latest", "api_key_env": "ANTHROPIC_API_KEY"},
+    "deepseek": {"model": DEFAULT_DEEPSEEK_MODEL, "api_key_env": "DEEPSEEK_API_KEY"},
 }
+
+PROTOCOLS = tuple(_DEFAULTS)
 
 
 def provider_defaults(protocol: str) -> dict[str, str]:
@@ -60,5 +62,13 @@ def create_provider(
             base_url or "https://api.anthropic.com/v1",
             timeout_seconds=timeout_seconds,
             max_tokens=max_tokens or 4096,
+        )
+    if protocol == "deepseek":
+        return DeepSeekProvider(
+            model,
+            api_key,
+            base_url or DEFAULT_DEEPSEEK_BASE_URL,
+            timeout_seconds=timeout_seconds,
+            max_tokens=max_tokens,
         )
     raise ValueError(f"unknown provider protocol: {protocol}")

@@ -122,7 +122,19 @@ agentcongress api-check --provider anthropic --model claude-3-5-haiku-latest
 agentcongress talk examples/basic-meeting.yaml --prompt "Propose the trace storage design." --provider openai-chat --model gpt-4o-mini
 ```
 
-当前的发言人/被致辞人对从 SQLite 读取。回复在安全的句子边界分段，并记录为 `speech.segment_committed` 事件。DeepSeek 等 OpenAI 兼容服务直接通过 `openai-chat` 协议使用（例如 `--base-url https://api.deepseek.com`）；专属便捷预设位于 `compatible` 分支。
+当前的发言人/被致辞人对从 SQLite 读取。回复在安全的句子边界分段，并记录为 `speech.segment_committed` 事件。DeepSeek 等 OpenAI 兼容服务也可直接用 `openai-chat` 协议访问（例如 `--base-url https://api.deepseek.com`）；本分支额外提供专属便捷预设：
+
+### DeepSeek 预设（本分支）
+
+`deepseek` 协议预设钉住 DeepSeek 端点、`DEEPSEEK_API_KEY` 环境变量与默认模型 `deepseek-v4-flash`：
+
+```powershell
+$env:DEEPSEEK_API_KEY = "..."
+agentcongress api-check --provider deepseek
+agentcongress talk examples/basic-meeting.yaml --prompt "Propose the trace storage design." --provider deepseek
+```
+
+旧接口 `--listener-mode deepseek` 保留为 DeepSeek 听众评估器快捷方式（等价于 `--provider deepseek --listener-mode llm`）。
 
 ## 工具调用（所有参会智能体）
 
