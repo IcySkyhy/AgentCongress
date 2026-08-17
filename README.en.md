@@ -158,6 +158,8 @@ agentcongress experiment-run examples/benchmarks/anthropic-original-performance.
 
 The formal protocol disables web search, ignores personal Codex configuration, and uses fixed 180/180/840-second slots without rollover. The `self` arm uses the same analyst identity twice; `congress` gives the second slot to an independent listener that may abstain, interject, or replace the speaker through persisted floor events. Every paid experiment is preceded by a model-free permission-profile preflight. For the minimal readiness/security audit, see [docs/audit.md](docs/audit.md); for the invalidated historical pilot and corrected Stage 1.5 design, see [docs/stage-one.md](docs/stage-one.md); the frozen Stage 2 suite is in [docs/stage-two.md](docs/stage-two.md).
 
+> Slot note: the frozen suite (`stage-two-suite.yaml`) uses 180/180/840, while the Stage 2 results document and the direct runner code use 240/120/840; confirm the final convention before a formal run (see [docs/audit.zh-CN.md](docs/audit.zh-CN.md)).
+
 Stage 2 has a separate fail-closed control-plane command. It validates the frozen five-task contract, hashes it, and emits every paired A–E block without starting a model or pretending that a container backend exists:
 
 ```powershell
@@ -220,6 +222,7 @@ AgentCongress/
 | Document | Contents |
 | --- | --- |
 | [docs/audit.md](docs/audit.md) | Minimal readiness and security audit |
+| [docs/audit.zh-CN.md](docs/audit.zh-CN.md) | Structured functional & security audit report (Chinese, 2026-08-17) |
 | [docs/stage-one.md](docs/stage-one.md) | Invalidated historical pilot and corrected Stage 1.5 design |
 | [docs/stage-two.md](docs/stage-two.md) | Frozen Stage 2 suite |
 | [docs/stage-two-results.md](docs/stage-two-results.md) | Measured Stage 2 results and limitations |

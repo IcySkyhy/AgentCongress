@@ -158,6 +158,8 @@ agentcongress experiment-run examples/benchmarks/anthropic-original-performance.
 
 正式协议禁用网页搜索、忽略个人 Codex 配置，并使用固定的 180/180/840 秒槽位且不滚存。`self` 组把同一个分析师身份用两次；`congress` 组把第二个槽位交给独立的听众，它可以通过持久化的发言权事件弃权、打断或替换发言人。每次付费实验之前都会先做一次无模型的权限档预检。最小就绪度/安全审计见 [docs/audit.md](docs/audit.md)；被推翻的历史试点与修正后的 Stage 1.5 设计见 [docs/stage-one.md](docs/stage-one.md)；冻结的 Stage 2 套件见 [docs/stage-two.md](docs/stage-two.md)。
 
+> 口径提示：冻结套件（`stage-two-suite.yaml`）使用 180/180/840 槽位，而 Stage 2 结果文档与直接运行器代码使用 240/120/840；正式运行前请确认最终口径，详见 [docs/audit.zh-CN.md](docs/audit.zh-CN.md)。
+
 Stage 2 有独立的失败关闭（fail-closed）控制面命令。它校验冻结的五任务契约、对其取哈希，并输出每个成对的 A–E 区块，而不会启动任何模型或假装存在容器后端：
 
 ```powershell
@@ -220,6 +222,7 @@ AgentCongress/
 | 文档 | 内容 |
 | --- | --- |
 | [docs/audit.md](docs/audit.md) | 最小就绪度与安全审计 |
+| [docs/audit.zh-CN.md](docs/audit.zh-CN.md) | 功能与安全结构化审计报告（中文，2026-08-17） |
 | [docs/stage-one.md](docs/stage-one.md) | 被推翻的历史试点与修正后的 Stage 1.5 设计 |
 | [docs/stage-two.md](docs/stage-two.md) | 冻结的 Stage 2 套件 |
 | [docs/stage-two-results.md](docs/stage-two-results.md) | Stage 2 实测结果与局限 |
